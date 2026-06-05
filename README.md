@@ -1,6 +1,6 @@
 # Feller's Ranch Data Funnel
 
-ETL pipeline that pulls data from **Shopify** (and eventually **Airtable** for SKU mapping), normalizes it for analytics, runs QA checks, and will load into **Google BigQuery**.
+ETL pipeline that pulls data from **Shopify** (and eventually **Airtable** for SKU mapping), normalizes it for analytics, runs QA checks, and loads into **Google BigQuery** via idempotent staging + MERGE upserts.
 
 ---
 
@@ -28,8 +28,8 @@ flowchart LR
         T5[qa_checks]
     end
 
-    subgraph load [Load - planned]
-        BQ[BigQuery]
+    subgraph load [Load]
+        BQ[BigQuery staging + MERGE]
     end
 
     Shopify --> E1 & E2 & E3 & E4
@@ -75,16 +75,23 @@ Feller's Ranch Data Funnel/
 │   ├── variable_weight.py      # Flags temp per-lb / by-weight line items
 │   └── qa_checks.py            # Pre-load data quality report
 │
-├── load/                   # Planned
-│   ├── __init__.py
-│   ├── bigquery_client.py
-│   ├── load_dims.py
-│   └── load_facts.py
+├── schema/                 # BigQuery table schemas (JSON)
+│   ├── fact_orders.json
+│   ├── fact_order_lines.json
+│   ├── dim_products.json
+│   ├── dim_customers.json
+│   └── dim_stores.json
 │
-└── pipeline/               # Planned
+├── load/
+│   ├── __init__.py
+│   ├── bigquery_client.py  # Connection, table setup, staging + MERGE upsert
+│   ├── load_dims.py        # dim_products, dim_customers, dim_stores
+│   └── load_facts.py       # fact_orders, fact_order_lines
+│
+└── pipeline/
     ├── __init__.py
     ├── run_pipeline.py     # End-to-end ETL entry point
-    └── scheduler.py        # Scheduled runs
+    └── scheduler.py        # Scheduled runs (not implemented)
 ```
 
 ---
@@ -141,22 +148,66 @@ Default store for all extractors: `fellers_ranch` (via `shopify_client.run_query
 
 ---
 
-### `load/` (planned)
+### `load/`
 
-| File | Intended role |
-|------|----------------|
-| `bigquery_client.py` | Authenticate and run BQ jobs |
-| `load_dims.py` | Load `dim_customers`, product dimension |
-| `load_facts.py` | Load `fact_orders`, `fact_order_lines` |
+| File | Purpose |
+|------|---------|
+| `bigquery_client.py` | BigQuery client, table creation from `schema/`, idempotent `upsert_rows()` via staging + MERGE |
+| `load_dims.py` | Upsert `dim_products`, `dim_customers`, `dim_stores` |
+| `load_facts.py` | Upsert `fact_orders`, `fact_order_lines` |
+
+**BigQuery target:** `data-funnel-3015.fellers_ranch` (configured in `bigquery_client.py`).
+
+**Upsert pattern** (idempotent — safe to re-run):
+
+1. Load rows into `{table}_staging` via a load job (`WRITE_TRUNCATE`)
+2. `MERGE` staging into the main table, with `ROW_NUMBER` deduplication on the key field
+3. Clear the staging table
+
+Uses load jobs instead of streaming inserts to avoid BigQuery streaming buffer issues on `MERGE`.
+
+| Module | CLI |
+|--------|-----|
+| `bigquery_client.py` | `python -m load.bigquery_client` (creates tables only) |
+| `load_facts.py` | `python -m load.load_facts` |
+| `load_dims.py` | `python -m load.load_dims` |
 
 ---
 
-### `pipeline/` (planned)
+### `schema/`
 
-| File | Intended role |
-|------|----------------|
-| `run_pipeline.py` | Extract → transform → QA → load in one run |
-| `scheduler.py` | Cron / scheduled execution |
+JSON schema definitions for all BigQuery tables. Used by `bigquery_client.py` to create tables and validate load jobs.
+
+| File | Table | Key field |
+|------|-------|-----------|
+| `fact_orders.json` | `fact_orders` | `order_id` |
+| `fact_order_lines.json` | `fact_order_lines` | `line_item_id` |
+| `dim_products.json` | `dim_products` | `shopify_product_id` |
+| `dim_customers.json` | `dim_customers` | `customer_id` |
+| `dim_stores.json` | `dim_stores` | `store_id` |
+
+Staging tables (`{table}_staging`) are created automatically during upsert and share the same schema.
+
+---
+
+### `pipeline/`
+
+| File | Purpose |
+|------|---------|
+| `run_pipeline.py` | Full ETL: setup tables → extract → transform → QA → load |
+| `scheduler.py` | Cron / scheduled execution (not implemented) |
+
+**Pipeline steps** (`run_pipeline.py`):
+
+1. **Setup** — create BigQuery tables if missing
+2. **Extract** — orders, products, customers, inventory from Shopify
+3. **Transform** — normalize, resolve variable-weight lines
+4. **QA** — run checks; warnings are logged but load proceeds
+5. **Load** — upsert all fact and dimension tables
+
+| Module | CLI |
+|--------|-----|
+| Full pipeline | `python -m pipeline.run_pipeline` |
 
 ---
 
@@ -216,7 +267,8 @@ Default store for all extractors: `fellers_ranch` (via `shopify_client.run_query
 
 - Python 3.12+
 - Shopify Admin API access (custom app or OAuth token)
-- (Future) Google Cloud project + BigQuery dataset
+- Google Cloud project with BigQuery enabled (`data-funnel-3015`, dataset `fellers_ranch`)
+- GCP credentials (Application Default Credentials or `GOOGLE_APPLICATION_CREDENTIALS` pointing to a service account JSON key)
 - (Future) Airtable base for SKU mapping
 
 ### Installation
@@ -228,13 +280,11 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-**Current dependencies** (from venv usage in code):
+**Dependencies:**
 
-- `requests`
-- `python-dotenv`
-- `google-cloud-bigquery` (for planned load stage)
-
-Pin these in `requirements.txt` when you formalize the environment.
+- `requests` — Shopify GraphQL API
+- `python-dotenv` — `.env` credential loading
+- `google-cloud-bigquery` — BigQuery load jobs and MERGE queries
 
 ### Environment variables
 
@@ -251,15 +301,32 @@ FLRS_SHOPIFY_CLIENT_SECRET=...
 
 Repeat the same four variables for `CGAL1`, `CGAL2`, `CGAL3` when enabling Conger stores.
 
-> **Security:** Never commit `.env`. Rotate any token that was ever committed or shared.
+### BigQuery authentication
+
+Authenticate with Google Cloud before running the load stage or full pipeline:
+
+```bash
+# Option A — service account key file
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
+
+# Option B — gcloud Application Default Credentials
+gcloud auth application-default login
+```
+
+Ensure the service account has **BigQuery Data Editor** and **BigQuery Job User** roles on project `data-funnel-3015`.
+
+> **Security:** Never commit `.env` or GCP credential JSON files. Rotate any token that was ever committed or shared.
 
 ---
 
-## Running the pipeline (today)
+## Running the pipeline
 
-Run from the **project root** so imports resolve (`auth`, `extract`, `transform`).
+Run from the **project root** so imports resolve (`auth`, `extract`, `transform`, `load`, `pipeline`).
 
 ```bash
+# Full ETL — extract, transform, QA, load to BigQuery
+python -m pipeline.run_pipeline
+
 # Test Shopify connection
 python -m extract.shopify_client
 
@@ -277,6 +344,11 @@ python -m transform.variable_weight
 
 # Full QA report (extract + transform + checks)
 python -m transform.qa_checks
+
+# Load only (re-extracts and transforms live data)
+python -m load.bigquery_client   # create tables
+python -m load.load_facts
+python -m load.load_dims
 ```
 
 ---
@@ -299,9 +371,11 @@ Shopify POS uses temporary products (often titled with `per lb`, `/lb`, `variabl
 
 ## Roadmap
 
+- [x] Implement `load/bigquery_client.py`, `load_dims.py`, `load_facts.py` (staging + MERGE upsert)
+- [x] Add BigQuery schema definitions in `schema/`
+- [x] Implement `pipeline/run_pipeline.py` (full ETL orchestration)
 - [ ] Implement `extract/airtable_client.py` and wire SKU mapping into `normalize_products`
-- [ ] Implement `load/bigquery_client.py`, `load_dims.py`, `load_facts.py`
-- [ ] Implement `pipeline/run_pipeline.py` (stop on QA failure)
+- [ ] Stop pipeline on QA failure (currently logs warnings and continues)
 - [ ] Implement `pipeline/scheduler.py`
 - [ ] Populate `requirements.txt` and `.env.example`
 - [ ] Parameterize `store` / `channel` in normalizers for Conger POS + online

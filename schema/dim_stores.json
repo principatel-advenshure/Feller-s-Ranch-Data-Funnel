@@ -1,0 +1,7 @@
+[
+    {"name": "store_id", "type": "STRING", "mode": "REQUIRED"},
+    {"name": "store_name", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "entity", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "channel", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "shopify_instance", "type": "STRING", "mode": "NULLABLE"}
+  ]

@@ -1,0 +1,14 @@
+[
+    {"name": "order_id", "type": "STRING", "mode": "REQUIRED"},
+    {"name": "order_name", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "created_at", "type": "TIMESTAMP", "mode": "NULLABLE"},
+    {"name": "financial_status", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "fulfillment_status", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "total_revenue", "type": "FLOAT", "mode": "NULLABLE"},
+    {"name": "subtotal", "type": "FLOAT", "mode": "NULLABLE"},
+    {"name": "currency", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "customer_id", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "customer_email", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "store", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "channel", "type": "STRING", "mode": "NULLABLE"}
+  ]

@@ -1,0 +1,12 @@
+[
+    {"name": "order_id", "type": "STRING", "mode": "REQUIRED"},
+    {"name": "line_item_id", "type": "STRING", "mode": "REQUIRED"},
+    {"name": "product_title", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "variant_id", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "sku", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "quantity", "type": "INTEGER", "mode": "NULLABLE"},
+    {"name": "unit_price", "type": "FLOAT", "mode": "NULLABLE"},
+    {"name": "line_revenue", "type": "FLOAT", "mode": "NULLABLE"},
+    {"name": "is_variable_weight", "type": "BOOLEAN", "mode": "NULLABLE"},
+    {"name": "store", "type": "STRING", "mode": "NULLABLE"}
+  ]

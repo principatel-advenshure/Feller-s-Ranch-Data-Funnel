@@ -1,0 +1,17 @@
+[
+    {"name": "shopify_product_id", "type": "STRING", "mode": "REQUIRED"},
+    {"name": "shopify_variant_id", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "raw_name", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "canonical_sku", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "variant_title", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "price", "type": "FLOAT", "mode": "NULLABLE"},
+    {"name": "inventory_quantity", "type": "INTEGER", "mode": "NULLABLE"},
+    {"name": "weight_value", "type": "FLOAT", "mode": "NULLABLE"},
+    {"name": "weight_unit", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "product_type", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "vendor", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "status", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "created_at", "type": "TIMESTAMP", "mode": "NULLABLE"},
+    {"name": "updated_at", "type": "TIMESTAMP", "mode": "NULLABLE"},
+    {"name": "store", "type": "STRING", "mode": "NULLABLE"}
+  ]

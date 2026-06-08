@@ -1,9 +1,14 @@
 """
 Main pipeline entry point.
 Runs full ETL: Extract → Transform → QA → Load
+With retry logic, state tracking, and failure handling.
 """
 
 import time
+from pipeline.error_handler import (
+    log, with_retry, save_state, is_step_completed,
+    clear_state, get_pipeline_decision, send_alert
+)
 from extract.extract_orders import extract_orders
 from extract.extract_products import extract_products
 from extract.extract_customers import extract_customers
@@ -13,67 +18,186 @@ from transform.normalize_products import normalize_products
 from transform.normalize_customers import normalize_customers
 from transform.variable_weight import resolve_variable_weight_orders
 from transform.qa_checks import run_qa_checks
-from load.bigquery_client import setup_all_tables
+from load.bigquery_client import setup_all_tables, upsert_rows
 from load.load_facts import load_fact_orders, load_fact_order_lines
 from load.load_dims import load_dim_products, load_dim_customers, load_dim_stores
 
 
-def run_pipeline():
+def safe_clear_staging(table_name: str):
+    """Clear a dirty staging table safely before retrying."""
+    try:
+        from load.bigquery_client import get_client, get_table_ref
+        client = get_client()
+        staging_ref = get_table_ref(f"{table_name}_staging")
+        client.query(f"DELETE FROM `{staging_ref}` WHERE TRUE").result()
+        log("INFO", "staging", f"Cleared dirty staging table: {table_name}_staging")
+    except Exception as e:
+        log("WARNING", "staging", f"Could not clear staging for {table_name}", e)
+
+
+def run_pipeline(resume: bool = False):
+    """
+    Run the full ETL pipeline with error handling.
+
+    Args:
+        resume: If True, skip already completed steps
+    """
     start_time = time.time()
-    print("🚀 Starting Feller's Ranch Data Pipeline")
+
+    if not resume:
+        clear_state()
+
+    log("INFO", "pipeline", "🚀 Starting Feller's Ranch Data Pipeline")
     print("=" * 50)
 
-    # ── Step 1: Setup tables ──
-    print("\n📋 Step 1 — Setting up BigQuery tables...")
-    setup_all_tables()
+    try:
+        # ── Step 1: Setup tables ──
+        if not is_step_completed("setup"):
+            log("INFO", "setup", "Setting up BigQuery tables...")
+            with_retry(setup_all_tables, "setup")
+            save_state("setup", "completed")
+        else:
+            log("INFO", "setup", "Skipping — already completed")
 
-    # ── Step 2: Extract ──
-    print("\n📤 Step 2 — Extracting data from Shopify...")
-    raw_orders = extract_orders()
-    raw_products = extract_products()
-    raw_customers = extract_customers()
-    raw_inventory = extract_inventory()
+        # ── Step 2: Extract ──
+        raw_orders = raw_products = raw_customers = raw_inventory = None
 
-    # ── Step 3: Transform ──
-    print("\n🔄 Step 3 — Transforming data...")
-    fact_orders, fact_order_lines = normalize_orders(raw_orders)
-    normalized_products, unmapped_products = normalize_products(raw_products)
-    normalized_customers = normalize_customers(raw_customers)
-    standard_lines, variable_lines = resolve_variable_weight_orders(fact_order_lines)
-    all_lines = standard_lines + variable_lines
+        if not is_step_completed("extract_orders"):
+            log("INFO", "extract", "Extracting orders...")
+            raw_orders = with_retry(extract_orders, "extract_orders")
+            save_state("extract_orders", "completed")
+        else:
+            log("INFO", "extract_orders", "Skipping — already completed")
+            raw_orders = extract_orders()
 
-    # ── Step 4: QA ──
-    print("\n🔍 Step 4 — Running QA checks...")
-    report = run_qa_checks(
-        fact_orders, all_lines,
-        normalized_products, unmapped_products,
-        normalized_customers
-    )
+        if not is_step_completed("extract_products"):
+            log("INFO", "extract", "Extracting products...")
+            raw_products = with_retry(extract_products, "extract_products")
+            save_state("extract_products", "completed")
+        else:
+            log("INFO", "extract_products", "Skipping — already completed")
+            raw_products = extract_products()
 
-    print(f"   Status: {'✅ PASSED' if report['passed'] else '⚠️ WARNINGS FOUND'}")
-    for issue in report["issues"]:
-        print(f"   {issue}")
-    for warning in report["warnings"]:
-        print(f"   {warning}")
+        if not is_step_completed("extract_customers"):
+            log("INFO", "extract", "Extracting customers...")
+            raw_customers = with_retry(extract_customers, "extract_customers")
+            save_state("extract_customers", "completed")
+        else:
+            log("INFO", "extract_customers", "Skipping — already completed")
+            raw_customers = extract_customers()
 
-    # ── Step 5: Load ──
-    print("\n💾 Step 5 — Loading data into BigQuery...")
-    load_fact_orders(fact_orders)
-    load_fact_order_lines(all_lines)
-    load_dim_products(normalized_products, unmapped_products)
-    load_dim_customers(normalized_customers)
-    load_dim_stores()
+        if not is_step_completed("extract_inventory"):
+            log("INFO", "extract", "Extracting inventory...")
+            raw_inventory = with_retry(extract_inventory, "extract_inventory")
+            save_state("extract_inventory", "completed")
+        else:
+            log("INFO", "extract_inventory", "Skipping — already completed")
+            raw_inventory = extract_inventory()
 
-    # ── Done ──
-    elapsed = round(time.time() - start_time, 2)
-    print("\n" + "=" * 50)
-    print(f"✅ Pipeline completed in {elapsed}s")
-    print(f"   Orders loaded:    {len(fact_orders)}")
-    print(f"   Order lines:      {len(all_lines)}")
-    print(f"   Products loaded:  {len(normalized_products) + len(unmapped_products)}")
-    print(f"   Customers loaded: {len(normalized_customers)}")
-    print("=" * 50)
+        # ── Step 3: Transform ──
+        if not is_step_completed("transform"):
+            log("INFO", "transform", "Transforming data...")
+            fact_orders, fact_order_lines = normalize_orders(raw_orders)
+            normalized_products, unmapped_products = normalize_products(raw_products)
+            normalized_customers = normalize_customers(raw_customers)
+            standard_lines, variable_lines = resolve_variable_weight_orders(fact_order_lines)
+            all_lines = standard_lines + variable_lines
+            save_state("transform", "completed")
+        else:
+            log("INFO", "transform", "Skipping — already completed")
+            fact_orders, fact_order_lines = normalize_orders(raw_orders)
+            normalized_products, unmapped_products = normalize_products(raw_products)
+            normalized_customers = normalize_customers(raw_customers)
+            standard_lines, variable_lines = resolve_variable_weight_orders(fact_order_lines)
+            all_lines = standard_lines + variable_lines
+
+        # ── Step 4: QA checks ──
+        if not is_step_completed("qa_checks"):
+            log("INFO", "qa", "Running QA checks...")
+            report = run_qa_checks(
+                fact_orders, all_lines,
+                normalized_products, unmapped_products,
+                normalized_customers
+            )
+            status = "✅ PASSED" if report["passed"] else "⚠️ WARNINGS FOUND"
+            log("INFO", "qa", f"QA Status: {status}")
+            for issue in report["issues"]:
+                log("WARNING", "qa", issue)
+            for warning in report["warnings"]:
+                log("WARNING", "qa", warning)
+            save_state("qa_checks", "completed")
+
+        # ── Step 5: Load ──
+        load_steps = {
+            "load_fact_orders": (
+                load_fact_orders, [fact_orders], "fact_orders"
+            ),
+            "load_fact_order_lines": (
+                load_fact_order_lines, [all_lines], "fact_order_lines"
+            ),
+            "load_dim_products": (
+                load_dim_products, [normalized_products, unmapped_products], "dim_products"
+            ),
+            "load_dim_customers": (
+                load_dim_customers, [normalized_customers], "dim_customers"
+            ),
+            "load_dim_stores": (
+                load_dim_stores, [], "dim_stores"
+            ),
+        }
+
+        for step_name, (func, args, table_name) in load_steps.items():
+            if is_step_completed(step_name):
+                log("INFO", step_name, "Skipping — already completed")
+                continue
+
+            log("INFO", step_name, f"Loading {table_name}...")
+
+            # Clear dirty staging before attempting
+            safe_clear_staging(table_name)
+
+            try:
+                with_retry(func, step_name, *args)
+                save_state(step_name, "completed")
+
+            except Exception as e:
+                log("ERROR", step_name, f"Failed to load {table_name}", e)
+                safe_clear_staging(table_name)
+                decision = get_pipeline_decision(step_name)
+
+                if decision == "restart":
+                    log("INFO", "pipeline",
+                        "Restarting pipeline from scratch...")
+                    clear_state()
+                    run_pipeline(resume=False)
+                    return
+                else:
+                    log("INFO", "pipeline",
+                        f"Continuing pipeline — skipping {table_name}")
+                    save_state(step_name, "failed")
+                    continue
+
+        # ── Done ──
+        elapsed = round(time.time() - start_time, 2)
+        log("SUCCESS", "pipeline", f"Pipeline completed in {elapsed}s")
+        print("=" * 50)
+        print(f"✅ Pipeline completed in {elapsed}s")
+        print(f"   Orders:    {len(fact_orders)}")
+        print(f"   Lines:     {len(all_lines)}")
+        print(f"   Products:  {len(normalized_products) + len(unmapped_products)}")
+        print(f"   Customers: {len(normalized_customers)}")
+        print("=" * 50)
+
+        # Clear state on success
+        clear_state()
+
+    except Exception as e:
+        log("ERROR", "pipeline", "Pipeline failed unexpectedly", e)
+        send_alert("pipeline", e)
+        raise
 
 
 if __name__ == "__main__":
-    run_pipeline()
+    import sys
+    resume = "--resume" in sys.argv
+    run_pipeline(resume=resume)

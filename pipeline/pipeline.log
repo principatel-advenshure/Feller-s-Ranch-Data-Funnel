@@ -1,0 +1,28 @@
+{"timestamp": "2026-06-08 10:11:57 UTC", "level": "INFO", "step": "state", "message": "Pipeline state cleared \u2014 starting fresh run", "error": null}
+{"timestamp": "2026-06-08 10:11:57 UTC", "level": "INFO", "step": "pipeline", "message": "\ud83d\ude80 Starting Feller's Ranch Data Pipeline", "error": null}
+{"timestamp": "2026-06-08 10:11:57 UTC", "level": "INFO", "step": "setup", "message": "Setting up BigQuery tables...", "error": null}
+{"timestamp": "2026-06-08 10:12:04 UTC", "level": "INFO", "step": "extract", "message": "Extracting orders...", "error": null}
+{"timestamp": "2026-06-08 10:12:05 UTC", "level": "INFO", "step": "extract", "message": "Extracting products...", "error": null}
+{"timestamp": "2026-06-08 10:12:08 UTC", "level": "INFO", "step": "extract", "message": "Extracting customers...", "error": null}
+{"timestamp": "2026-06-08 10:13:40 UTC", "level": "INFO", "step": "extract", "message": "Extracting inventory...", "error": null}
+{"timestamp": "2026-06-08 10:13:42 UTC", "level": "INFO", "step": "transform", "message": "Transforming data...", "error": null}
+{"timestamp": "2026-06-08 10:13:42 UTC", "level": "INFO", "step": "qa", "message": "Running QA checks...", "error": null}
+{"timestamp": "2026-06-08 10:13:42 UTC", "level": "INFO", "step": "qa", "message": "QA Status: \u26a0\ufe0f WARNINGS FOUND", "error": null}
+{"timestamp": "2026-06-08 10:13:42 UTC", "level": "WARNING", "step": "qa", "message": "\u274c 80 products have no canonical SKU \u2014 update Airtable mapping", "error": null}
+{"timestamp": "2026-06-08 10:13:42 UTC", "level": "WARNING", "step": "qa", "message": "\u26a0\ufe0f  71 order lines have no SKU", "error": null}
+{"timestamp": "2026-06-08 10:13:42 UTC", "level": "WARNING", "step": "qa", "message": "\u26a0\ufe0f  22 order lines have $0 price", "error": null}
+{"timestamp": "2026-06-08 10:13:42 UTC", "level": "WARNING", "step": "qa", "message": "\u26a0\ufe0f  3 products are still in DRAFT status", "error": null}
+{"timestamp": "2026-06-08 10:13:42 UTC", "level": "WARNING", "step": "qa", "message": "\u26a0\ufe0f  274 customers have no name", "error": null}
+{"timestamp": "2026-06-08 10:13:42 UTC", "level": "WARNING", "step": "qa", "message": "\u26a0\ufe0f  253 customers have no location", "error": null}
+{"timestamp": "2026-06-08 10:13:42 UTC", "level": "INFO", "step": "load_fact_orders", "message": "Loading fact_orders...", "error": null}
+{"timestamp": "2026-06-08 10:13:46 UTC", "level": "INFO", "step": "staging", "message": "Cleared dirty staging table: fact_orders_staging", "error": null}
+{"timestamp": "2026-06-08 10:14:00 UTC", "level": "INFO", "step": "load_fact_order_lines", "message": "Loading fact_order_lines...", "error": null}
+{"timestamp": "2026-06-08 10:14:05 UTC", "level": "INFO", "step": "staging", "message": "Cleared dirty staging table: fact_order_lines_staging", "error": null}
+{"timestamp": "2026-06-08 10:14:26 UTC", "level": "INFO", "step": "load_dim_products", "message": "Loading dim_products...", "error": null}
+{"timestamp": "2026-06-08 10:14:31 UTC", "level": "INFO", "step": "staging", "message": "Cleared dirty staging table: dim_products_staging", "error": null}
+{"timestamp": "2026-06-08 10:14:44 UTC", "level": "INFO", "step": "load_dim_customers", "message": "Loading dim_customers...", "error": null}
+{"timestamp": "2026-06-08 10:14:48 UTC", "level": "INFO", "step": "staging", "message": "Cleared dirty staging table: dim_customers_staging", "error": null}
+{"timestamp": "2026-06-08 10:15:03 UTC", "level": "INFO", "step": "load_dim_stores", "message": "Loading dim_stores...", "error": null}
+{"timestamp": "2026-06-08 10:15:07 UTC", "level": "INFO", "step": "staging", "message": "Cleared dirty staging table: dim_stores_staging", "error": null}
+{"timestamp": "2026-06-08 10:15:21 UTC", "level": "SUCCESS", "step": "pipeline", "message": "Pipeline completed in 204.18s", "error": null}
+{"timestamp": "2026-06-08 10:15:21 UTC", "level": "INFO", "step": "state", "message": "Pipeline state cleared \u2014 starting fresh run", "error": null}

@@ -1,12 +1,15 @@
 """
 Normalize raw Shopify order data into a clean flat structure
 ready for loading into BigQuery fact_orders and fact_order_lines.
+Filters out $0 orders (draft orders / shipping label requests).
 """
 
 
 def normalize_orders(raw_orders: list) -> tuple:
     """
     Normalize raw Shopify orders into fact_orders and fact_order_lines.
+    Filters out $0 orders as confirmed by Mason — these are draft orders
+    or shipping label requests, not real sales.
 
     Args:
         raw_orders: List of raw orders from extract_orders()
@@ -17,7 +20,21 @@ def normalize_orders(raw_orders: list) -> tuple:
     fact_orders = []
     fact_order_lines = []
 
-    for order in raw_orders:
+    # Filter out $0 orders before processing
+    zero_orders = [
+        o for o in raw_orders
+        if float(o["totalPriceSet"]["shopMoney"]["amount"]) == 0
+    ]
+    if zero_orders:
+        print(f"⚠️  Filtered out {len(zero_orders)} $0 orders "
+              f"(draft orders / shipping labels — not real sales)")
+
+    valid_orders = [
+        o for o in raw_orders
+        if float(o["totalPriceSet"]["shopMoney"]["amount"]) > 0
+    ]
+
+    for order in valid_orders:
         # Clean customer data safely
         customer = order.get("customer")
         customer_id = customer.get("id") if customer else None

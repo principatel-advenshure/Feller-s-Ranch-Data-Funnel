@@ -113,7 +113,7 @@ def run_pipeline(resume: bool = False):
             log("INFO", "transform", "Skipping — already completed")
             fact_orders, fact_order_lines = normalize_orders(raw_orders)
             normalized_products, unmapped_products = normalize_products(raw_products)
-            normalized_customers = normalize_customers(raw_customers)
+            normalized_customers = normalize_customers(raw_customers, fact_orders)
             standard_lines, variable_lines = resolve_variable_weight_orders(fact_order_lines)
             all_lines = standard_lines + variable_lines
 

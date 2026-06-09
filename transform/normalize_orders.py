@@ -53,7 +53,9 @@ def normalize_orders(raw_orders: list) -> tuple:
             "customer_id": customer_id,
             "customer_email": customer_email,
             "store": "fellers_ranch",
-            "channel": "online"
+            "channel": "online",
+            "discount_amount": float(order.get("totalDiscountsSet", {}).get("shopMoney", {}).get("amount", 0)),
+            "refund_amount": float(order.get("totalRefundedSet", {}).get("shopMoney", {}).get("amount", 0))
         }
         fact_orders.append(fact_order)
 

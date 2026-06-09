@@ -39,6 +39,16 @@ def extract_orders(days_back=30):
                                 amount
                             }}
                         }}
+                        totalDiscountsSet {{
+                            shopMoney {{
+                                amount
+                            }}
+                        }}
+                        totalRefundedSet {{
+                            shopMoney {{
+                                amount
+                            }}
+                        }}
                         customer {{
                             id
                             firstName

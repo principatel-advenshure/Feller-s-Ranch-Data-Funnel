@@ -10,5 +10,7 @@
     {"name": "customer_id", "type": "STRING", "mode": "NULLABLE"},
     {"name": "customer_email", "type": "STRING", "mode": "NULLABLE"},
     {"name": "store", "type": "STRING", "mode": "NULLABLE"},
-    {"name": "channel", "type": "STRING", "mode": "NULLABLE"}
+    {"name": "channel", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "discount_amount", "type": "FLOAT", "mode": "NULLABLE"},
+    {"name": "refund_amount", "type": "FLOAT", "mode": "NULLABLE"}
   ]

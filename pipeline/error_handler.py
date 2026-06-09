@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SLACK_WEBHOOK_URL = os.getenv("SLACK_ALERT_WEBHOOK")
 MAX_RETRIES = 3
 RETRY_BACKOFF = [10, 30, 60]  # seconds between retries
 
@@ -95,36 +94,63 @@ def with_retry(func, step: str, *args, **kwargs):
                 raise
 
 
-# ── Slack alerting ──
+
+# ── Email alerting ──
 
 def send_alert(step: str, error: Exception):
     """
-    Send a Slack alert when the pipeline fails after all retries.
-    Requires SLACK_ALERT_WEBHOOK in .env
+    Send an email alert when the pipeline fails after all retries.
+    Requires Gmail SMTP config in .env (see README).
     """
-    if not SLACK_WEBHOOK_URL:
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+
+    smtp_host = os.getenv("ALERT_SMTP_HOST")
+    smtp_port = int(os.getenv("ALERT_SMTP_PORT", 587))
+    smtp_user = os.getenv("ALERT_EMAIL_FROM")
+    smtp_pass = os.getenv("ALERT_EMAIL_PASSWORD")
+    alert_to = os.getenv("ALERT_EMAIL_TO")
+
+    if not all([smtp_host, smtp_user, smtp_pass, alert_to]):
         log("WARNING", "alert",
-            "No SLACK_ALERT_WEBHOOK set — skipping Slack alert")
+            "Email alert config missing in .env — skipping alert")
         return
 
     try:
-        import requests
         timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-        payload = {
-            "text": (
-                f":rotating_light: *Data Funnel Pipeline Failed*\n"
-                f"*Step:* {step}\n"
-                f"*Error:* {str(error)}\n"
-                f"*Time:* {timestamp}\n"
-                f"*Action needed:* Check `pipeline/pipeline.log` for details"
-            )
-        }
-        requests.post(SLACK_WEBHOOK_URL, json=payload, timeout=10)
-        log("INFO", "alert", "Slack alert sent successfully")
-    except Exception as alert_error:
-        log("WARNING", "alert",
-            "Failed to send Slack alert", alert_error)
 
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"🚨 Data Funnel Pipeline Failed — {step}"
+        msg["From"] = smtp_user
+        msg["To"] = alert_to
+
+        body = f"""
+Pipeline Failure Alert
+======================
+Step:    {step}
+Error:   {str(error)}
+Time:    {timestamp}
+
+Action needed:
+Check pipeline/pipeline.log for full details.
+To resume from failure point run:
+python -m pipeline.run_pipeline --resume
+
+— Data Funnel Pipeline
+        """
+
+        msg.attach(MIMEText(body, "plain"))
+
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, alert_to, msg.as_string())
+
+        log("INFO", "alert", f"Email alert sent to {alert_to}")
+
+    except Exception as alert_error:
+        log("WARNING", "alert", "Failed to send email alert", alert_error)
 
 # ── Pipeline state tracking ──
 

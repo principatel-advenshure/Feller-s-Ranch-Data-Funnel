@@ -9,6 +9,7 @@ from pipeline.error_handler import (
     log, with_retry, save_state, is_step_completed,
     clear_state, get_pipeline_decision, send_alert
 )
+from auth.token_manager import refresh_token_if_needed
 from extract.extract_orders import extract_orders
 from extract.extract_products import extract_products
 from extract.extract_customers import extract_customers
@@ -51,6 +52,11 @@ def run_pipeline(resume: bool = False):
     print("=" * 50)
 
     try:
+        # ── Step 0: Validate Shopify token ──
+        log("INFO", "auth", "Validating Shopify token...")
+        with_retry(refresh_token_if_needed, "auth", "fellers_ranch")
+        log("SUCCESS", "auth", "Token valid — proceeding")
+
         # ── Step 1: Setup tables ──
         if not is_step_completed("setup"):
             log("INFO", "setup", "Setting up BigQuery tables...")
@@ -190,6 +196,7 @@ def run_pipeline(resume: bool = False):
 
         # Clear state on success
         clear_state()
+        # raise Exception("Test alert — intentional failure to verify email works")
 
     except Exception as e:
         log("ERROR", "pipeline", "Pipeline failed unexpectedly", e)

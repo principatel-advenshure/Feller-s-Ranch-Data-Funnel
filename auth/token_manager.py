@@ -48,6 +48,38 @@ def get_valid_token(store: str = "fellers_ranch"):
     print(f"✅ Credentials loaded for {store}")
     return token, shop_url, client_id, client_secret
 
+def refresh_token_if_needed(store: str = "fellers_ranch"):
+    """
+    Validate token is still working by making a lightweight test query.
+    Fails fast with a clear error if token is expired or revoked.
+    """
+    import requests
+
+    token, shop_url, client_id, client_secret = get_valid_token(store)
+
+    try:
+        response = requests.post(
+            f"https://{shop_url}/admin/api/2024-01/graphql.json",
+            json={"query": "{ shop { name } }"},
+            headers={"X-Shopify-Access-Token": token},
+            timeout=10
+        )
+        if response.status_code == 401:
+            raise Exception(
+                f"Token for {store} is expired or revoked. "
+                f"Regenerate it and update {store.upper()}_TOKEN in .env"
+            )
+        if response.status_code != 200:
+            raise Exception(
+                f"Unexpected response validating token for {store}: "
+                f"{response.status_code}"
+            )
+        print(f"✅ Token valid for {store}")
+
+    except requests.exceptions.Timeout:
+        raise Exception(f"❌ Token validation timed out for {store}")
+    except requests.exceptions.ConnectionError:
+        raise Exception(f"❌ Cannot reach Shopify for {store} — check network")
 
 if __name__ == "__main__":
     token, shop_url, client_id, client_secret = get_valid_token("fellers_ranch")

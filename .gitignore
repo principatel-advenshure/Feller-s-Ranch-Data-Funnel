@@ -6,6 +6,10 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 
+# Pipeline runtime artifacts
+pipeline/pipeline.log
+pipeline/pipeline_state.json
+
 # Secrets
 .env
 .env.local

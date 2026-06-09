@@ -90,8 +90,11 @@ Feller's Ranch Data Funnel/
 │
 └── pipeline/
     ├── __init__.py
-    ├── run_pipeline.py     # End-to-end ETL entry point
-    └── scheduler.py        # Scheduled runs (not implemented)
+    ├── error_handler.py    # Retries, logging, Gmail alerts, state tracking
+    ├── run_pipeline.py     # End-to-end ETL entry point (--resume support)
+    ├── scheduler.py        # Scheduled runs (not implemented)
+    ├── pipeline.log        # Runtime log (not committed)
+    └── pipeline_state.json # Resume checkpoint (not committed)
 ```
 
 ---
@@ -102,7 +105,7 @@ Feller's Ranch Data Funnel/
 
 | File | Purpose |
 |------|---------|
-| `token_manager.py` | Loads per-store credentials from `.env` using prefix keys. Supports multiple Shopify stores via `STORE_PREFIXES`. |
+| `token_manager.py` | Loads per-store credentials from `.env` using prefix keys. `refresh_token_if_needed()` validates the token against Shopify before each pipeline run. |
 
 **Supported stores** (extend in `STORE_PREFIXES`):
 
@@ -194,20 +197,33 @@ Staging tables (`{table}_staging`) are created automatically during upsert and s
 
 | File | Purpose |
 |------|---------|
-| `run_pipeline.py` | Full ETL: setup tables → extract → transform → QA → load |
+| `error_handler.py` | Central error handling — structured logging, retries, Gmail alerts, resume state |
+| `run_pipeline.py` | Full ETL with retry, failure recovery, and `--resume` support |
 | `scheduler.py` | Cron / scheduled execution (not implemented) |
 
 **Pipeline steps** (`run_pipeline.py`):
 
+0. **Auth** — validate Shopify token before extraction
 1. **Setup** — create BigQuery tables if missing
 2. **Extract** — orders, products, customers, inventory from Shopify
 3. **Transform** — normalize, resolve variable-weight lines
 4. **QA** — run checks; warnings are logged but load proceeds
-5. **Load** — upsert all fact and dimension tables
+5. **Load** — upsert all fact and dimension tables (clears dirty staging on retry)
+
+**Error handling** (`error_handler.py`):
+
+| Feature | Behavior |
+|---------|----------|
+| Retries | Up to 3 attempts per step with 10s / 30s / 60s backoff |
+| Logging | JSON lines to `pipeline/pipeline.log` + console output |
+| Gmail alerts | Email sent on final retry failure or unexpected pipeline crash |
+| State tracking | `pipeline/pipeline_state.json` records completed steps for resume |
+| Failure recovery | Extract/transform failure → restart from scratch; load failure → skip failed table and continue |
 
 | Module | CLI |
 |--------|-----|
 | Full pipeline | `python -m pipeline.run_pipeline` |
+| Resume after failure | `python -m pipeline.run_pipeline --resume` |
 
 ---
 
@@ -301,6 +317,20 @@ FLRS_SHOPIFY_CLIENT_SECRET=...
 
 Repeat the same four variables for `CGAL1`, `CGAL2`, `CGAL3` when enabling Conger stores.
 
+### Gmail failure alerts
+
+When a pipeline step fails after all retries, an email alert is sent via Gmail SMTP. Add these to `.env`:
+
+```env
+ALERT_SMTP_HOST=smtp.gmail.com
+ALERT_SMTP_PORT=587
+ALERT_EMAIL_FROM=your-alert@gmail.com
+ALERT_EMAIL_PASSWORD=your-app-password
+ALERT_EMAIL_TO=recipient@example.com
+```
+
+Use a [Gmail App Password](https://support.google.com/accounts/answer/185833) (not your regular Gmail password). If alert config is missing, failures are still logged to `pipeline/pipeline.log`.
+
 ### BigQuery authentication
 
 Authenticate with Google Cloud before running the load stage or full pipeline:
@@ -326,6 +356,9 @@ Run from the **project root** so imports resolve (`auth`, `extract`, `transform`
 ```bash
 # Full ETL — extract, transform, QA, load to BigQuery
 python -m pipeline.run_pipeline
+
+# Resume from last checkpoint after a partial failure
+python -m pipeline.run_pipeline --resume
 
 # Test Shopify connection
 python -m extract.shopify_client
@@ -374,6 +407,8 @@ Shopify POS uses temporary products (often titled with `per lb`, `/lb`, `variabl
 - [x] Implement `load/bigquery_client.py`, `load_dims.py`, `load_facts.py` (staging + MERGE upsert)
 - [x] Add BigQuery schema definitions in `schema/`
 - [x] Implement `pipeline/run_pipeline.py` (full ETL orchestration)
+- [x] Add `pipeline/error_handler.py` (retries, Gmail alerts, resume state)
+- [x] Add Shopify token validation before pipeline runs
 - [ ] Implement `extract/airtable_client.py` and wire SKU mapping into `normalize_products`
 - [ ] Stop pipeline on QA failure (currently logs warnings and continues)
 - [ ] Implement `pipeline/scheduler.py`

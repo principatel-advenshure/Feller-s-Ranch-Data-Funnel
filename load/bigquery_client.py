@@ -16,6 +16,14 @@ SCHEMA_DIR = "schema"
 
 
 def get_client() -> bigquery.Client:
+    credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if credentials_path and os.path.exists(credentials_path):
+        from google.oauth2 import service_account
+        credentials = service_account.Credentials.from_service_account_file(
+            credentials_path,
+            scopes=["https://www.googleapis.com/auth/bigquery"]
+        )
+        return bigquery.Client(project=PROJECT_ID, credentials=credentials)
     return bigquery.Client(project=PROJECT_ID)
 
 

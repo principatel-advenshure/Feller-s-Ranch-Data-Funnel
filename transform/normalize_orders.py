@@ -31,7 +31,7 @@ def normalize_orders(raw_orders: list) -> tuple:
 
     valid_orders = [
         o for o in raw_orders
-        if float(o["totalPriceSet"]["shopMoney"]["amount"]) > 0
+        if float(o["totalPriceSet"]["shopMoney"]["amount"]) > 1
     ]
 
     for order in valid_orders:

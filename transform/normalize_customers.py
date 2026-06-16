@@ -1,6 +1,6 @@
 """
 Normalize raw Shopify customer data.
-Handles missing names, deduplicates by email,
+Handles missing names, deduplicates by email and ID,
 and prepares for dim_customers in BigQuery.
 Adds first_order_date from order history.
 """
@@ -20,7 +20,18 @@ def normalize_customers(raw_customers: list, fact_orders: list = None) -> list:
     normalized = []
     seen_emails = set()
 
-    # Build first_order_date lookup from orders if provided
+    # ── Step 1: Deduplicate raw customers by ID before processing ──
+    seen_ids = set()
+    deduped = []
+    for customer in raw_customers:
+        cid = customer.get("id")
+        if cid not in seen_ids:
+            seen_ids.add(cid)
+            deduped.append(customer)
+    print(f"   Deduped raw customers: {len(raw_customers)} → {len(deduped)}")
+    raw_customers = deduped
+
+    # ── Step 2: Build first_order_date lookup from orders if provided ──
     first_order_lookup = {}
     if fact_orders:
         for order in fact_orders:
@@ -35,6 +46,7 @@ def normalize_customers(raw_customers: list, fact_orders: list = None) -> list:
                 if order_date < first_order_lookup[email]:
                     first_order_lookup[email] = order_date
 
+    # ── Step 3: Normalize each customer ──
     for customer in raw_customers:
         email = (customer.get("email") or "").strip().lower()
 

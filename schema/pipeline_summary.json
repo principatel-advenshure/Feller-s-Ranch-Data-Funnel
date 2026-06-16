@@ -1,0 +1,19 @@
+[
+    {"name": "summary_id", "type": "STRING", "mode": "REQUIRED"},
+    {"name": "store", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "generated_at", "type": "TIMESTAMP", "mode": "NULLABLE"},
+    {"name": "summary_text", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "total_orders", "type": "INTEGER", "mode": "NULLABLE"},
+    {"name": "net_sales", "type": "FLOAT", "mode": "NULLABLE"},
+    {"name": "gross_sales", "type": "FLOAT", "mode": "NULLABLE"},
+    {"name": "avg_order_value", "type": "FLOAT", "mode": "NULLABLE"},
+    {"name": "units_sold", "type": "INTEGER", "mode": "NULLABLE"},
+    {"name": "top_product", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "top_product_revenue", "type": "FLOAT", "mode": "NULLABLE"},
+    {"name": "total_refunds", "type": "FLOAT", "mode": "NULLABLE"},
+    {"name": "total_discounts", "type": "FLOAT", "mode": "NULLABLE"},
+    {"name": "new_customers", "type": "INTEGER", "mode": "NULLABLE"},
+    {"name": "returning_customers", "type": "INTEGER", "mode": "NULLABLE"},
+    {"name": "best_month", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "best_month_revenue", "type": "FLOAT", "mode": "NULLABLE"}
+  ]

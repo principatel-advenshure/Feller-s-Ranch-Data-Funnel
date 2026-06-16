@@ -22,7 +22,7 @@ from transform.qa_checks import run_qa_checks
 from load.bigquery_client import setup_all_tables, upsert_rows
 from load.load_facts import load_fact_orders, load_fact_order_lines
 from load.load_dims import load_dim_products, load_dim_customers, load_dim_stores
-
+from pipeline.summary_generator import generate_summary
 
 def safe_clear_staging(table_name: str):
     """Clear a dirty staging table safely before retrying."""
@@ -194,6 +194,12 @@ def run_pipeline(resume: bool = False):
         print(f"   Customers: {len(normalized_customers)}")
         print("=" * 50)
 
+        # ── Step 6: Generate summary ──
+        log("INFO", "summary", "Generating pipeline summary...")
+        summary = generate_summary(fact_orders, all_lines, normalized_customers)
+        upsert_rows("pipeline_summary", [summary], key_field="summary_id")
+        log("SUCCESS", "summary", f"Summary saved — {summary['summary_text'][:80]}...")
+        
         # Clear state on success
         clear_state()
         # raise Exception("Test alert — intentional failure to verify email works")

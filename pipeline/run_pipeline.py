@@ -23,6 +23,7 @@ from load.bigquery_client import setup_all_tables, upsert_rows
 from load.load_facts import load_fact_orders, load_fact_order_lines
 from load.load_dims import load_dim_products, load_dim_customers, load_dim_stores
 from pipeline.summary_generator import generate_summary
+from extract.airtable_client import extract_sku_mapping
 
 def safe_clear_staging(table_name: str):
     """Clear a dirty staging table safely before retrying."""
@@ -104,7 +105,9 @@ def run_pipeline(resume: bool = False):
         if not is_step_completed("transform"):
             log("INFO", "transform", "Transforming data...")
             fact_orders, fact_order_lines = normalize_orders(raw_orders)
-            normalized_products, unmapped_products = normalize_products(raw_products)
+            # normalized_products, unmapped_products = normalize_products(raw_products)
+            sku_mapping = extract_sku_mapping()
+            normalized_products, unmapped_products = normalize_products(raw_products, sku_mapping)
             normalized_customers = normalize_customers(raw_customers)
             standard_lines, variable_lines = resolve_variable_weight_orders(fact_order_lines)
             all_lines = standard_lines + variable_lines
@@ -114,7 +117,7 @@ def run_pipeline(resume: bool = False):
             fact_orders, fact_order_lines = normalize_orders(raw_orders)
             normalized_products, unmapped_products = normalize_products(raw_products)
             normalized_customers = normalize_customers(raw_customers, fact_orders)
-            standard_lines, variable_lines = resolve_variable_weight_orders(fact_order_lines)
+            standard_lines, variable_lines = resolve_variable_weight_orders(fact_order_lines) 
             all_lines = standard_lines + variable_lines
 
         # ── Step 4: QA checks ──
@@ -199,7 +202,7 @@ def run_pipeline(resume: bool = False):
         summary = generate_summary(fact_orders, all_lines, normalized_customers)
         upsert_rows("pipeline_summary", [summary], key_field="summary_id")
         log("SUCCESS", "summary", f"Summary saved — {summary['summary_text'][:80]}...")
-        
+
         # Clear state on success
         clear_state()
         # raise Exception("Test alert — intentional failure to verify email works")

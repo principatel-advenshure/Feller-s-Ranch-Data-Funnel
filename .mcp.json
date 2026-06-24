@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "Feller-s-Ranch-Data-Funnel Docs": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://gitmcp.io/principatel-advenshure/Feller-s-Ranch-Data-Funnel"
+      ]
+    }
+  }
+}

@@ -1,0 +1,15 @@
+[
+    {"name": "line_id", "type": "STRING", "mode": "REQUIRED"},
+    {"name": "invoice_id", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "date", "type": "DATE", "mode": "NULLABLE"},
+    {"name": "month", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "customer_name", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "product_description", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "memo", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "quantity", "type": "FLOAT", "mode": "NULLABLE"},
+    {"name": "unit_of_measure", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "unit_price", "type": "FLOAT", "mode": "NULLABLE"},
+    {"name": "line_amount", "type": "FLOAT", "mode": "NULLABLE"},
+    {"name": "store", "type": "STRING", "mode": "NULLABLE"},
+    {"name": "source", "type": "STRING", "mode": "NULLABLE"}
+  ]

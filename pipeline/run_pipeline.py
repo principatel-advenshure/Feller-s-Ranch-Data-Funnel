@@ -14,16 +14,20 @@ from extract.extract_orders import extract_orders
 from extract.extract_products import extract_products
 from extract.extract_customers import extract_customers
 from extract.extract_inventory import extract_inventory
+from extract.airtable_client import extract_sku_mapping
+from extract.extract_quickbooks import extract_all_b2b_sales
 from transform.normalize_orders import normalize_orders
 from transform.normalize_products import normalize_products
 from transform.normalize_customers import normalize_customers
 from transform.variable_weight import resolve_variable_weight_orders
+from transform.normalize_quickbooks import normalize_quickbooks
 from transform.qa_checks import run_qa_checks
 from load.bigquery_client import setup_all_tables, upsert_rows
 from load.load_facts import load_fact_orders, load_fact_order_lines
 from load.load_dims import load_dim_products, load_dim_customers, load_dim_stores
+from load.load_b2b import load_fact_b2b_invoices, load_fact_b2b_invoice_lines
 from pipeline.summary_generator import generate_summary
-from extract.airtable_client import extract_sku_mapping
+
 
 def safe_clear_staging(table_name: str):
     """Clear a dirty staging table safely before retrying."""
@@ -105,19 +109,19 @@ def run_pipeline(resume: bool = False):
         if not is_step_completed("transform"):
             log("INFO", "transform", "Transforming data...")
             fact_orders, fact_order_lines = normalize_orders(raw_orders)
-            # normalized_products, unmapped_products = normalize_products(raw_products)
             sku_mapping = extract_sku_mapping()
             normalized_products, unmapped_products = normalize_products(raw_products, sku_mapping)
-            normalized_customers = normalize_customers(raw_customers)
+            normalized_customers = normalize_customers(raw_customers, fact_orders)
             standard_lines, variable_lines = resolve_variable_weight_orders(fact_order_lines)
             all_lines = standard_lines + variable_lines
             save_state("transform", "completed")
         else:
             log("INFO", "transform", "Skipping — already completed")
             fact_orders, fact_order_lines = normalize_orders(raw_orders)
-            normalized_products, unmapped_products = normalize_products(raw_products)
+            sku_mapping = extract_sku_mapping()
+            normalized_products, unmapped_products = normalize_products(raw_products, sku_mapping)
             normalized_customers = normalize_customers(raw_customers, fact_orders)
-            standard_lines, variable_lines = resolve_variable_weight_orders(fact_order_lines) 
+            standard_lines, variable_lines = resolve_variable_weight_orders(fact_order_lines)
             all_lines = standard_lines + variable_lines
 
         # ── Step 4: QA checks ──
@@ -136,7 +140,7 @@ def run_pipeline(resume: bool = False):
                 log("WARNING", "qa", warning)
             save_state("qa_checks", "completed")
 
-        # ── Step 5: Load ──
+        # ── Step 5: Load Shopify data ──
         load_steps = {
             "load_fact_orders": (
                 load_fact_orders, [fact_orders], "fact_orders"
@@ -161,8 +165,6 @@ def run_pipeline(resume: bool = False):
                 continue
 
             log("INFO", step_name, f"Loading {table_name}...")
-
-            # Clear dirty staging before attempting
             safe_clear_staging(table_name)
 
             try:
@@ -186,16 +188,20 @@ def run_pipeline(resume: bool = False):
                     save_state(step_name, "failed")
                     continue
 
-        # ── Done ──
-        elapsed = round(time.time() - start_time, 2)
-        log("SUCCESS", "pipeline", f"Pipeline completed in {elapsed}s")
-        print("=" * 50)
-        print(f"✅ Pipeline completed in {elapsed}s")
-        print(f"   Orders:    {len(fact_orders)}")
-        print(f"   Lines:     {len(all_lines)}")
-        print(f"   Products:  {len(normalized_products) + len(unmapped_products)}")
-        print(f"   Customers: {len(normalized_customers)}")
-        print("=" * 50)
+        # ── Step 5b: Load B2B QuickBooks data ──
+        if not is_step_completed("load_b2b"):
+            log("INFO", "load_b2b", "Loading QuickBooks B2B data...")
+            raw_b2b = extract_all_b2b_sales()
+            fact_b2b_invoices, fact_b2b_lines, _ = normalize_quickbooks(raw_b2b)
+            safe_clear_staging("fact_b2b_invoices")
+            safe_clear_staging("fact_b2b_invoice_lines")
+            load_fact_b2b_invoices(fact_b2b_invoices)
+            load_fact_b2b_invoice_lines(fact_b2b_lines)
+            save_state("load_b2b", "completed")
+            log("SUCCESS", "load_b2b",
+                f"B2B loaded — {len(fact_b2b_invoices)} invoices · {len(fact_b2b_lines)} lines")
+        else:
+            log("INFO", "load_b2b", "Skipping — already completed")
 
         # ── Step 6: Generate summary ──
         log("INFO", "summary", "Generating pipeline summary...")
@@ -203,9 +209,21 @@ def run_pipeline(resume: bool = False):
         upsert_rows("pipeline_summary", [summary], key_field="summary_id")
         log("SUCCESS", "summary", f"Summary saved — {summary['summary_text'][:80]}...")
 
+        # ── Done ──
+        elapsed = round(time.time() - start_time, 2)
+        log("SUCCESS", "pipeline", f"Pipeline completed in {elapsed}s")
+        print("=" * 50)
+        print(f"✅ Pipeline completed in {elapsed}s")
+        print(f"   Orders:       {len(fact_orders)}")
+        print(f"   Lines:        {len(all_lines)}")
+        print(f"   Products:     {len(normalized_products) + len(unmapped_products)}")
+        print(f"   Customers:    {len(normalized_customers)}")
+        print(f"   B2B invoices: {len(fact_b2b_invoices)}")
+        print(f"   B2B lines:    {len(fact_b2b_lines)}")
+        print("=" * 50)
+
         # Clear state on success
         clear_state()
-        # raise Exception("Test alert — intentional failure to verify email works")
 
     except Exception as e:
         log("ERROR", "pipeline", "Pipeline failed unexpectedly", e)

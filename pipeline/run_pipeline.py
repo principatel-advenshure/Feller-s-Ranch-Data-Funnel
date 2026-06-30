@@ -205,7 +205,7 @@ def run_pipeline(resume: bool = False):
 
         # ── Step 6: Generate summary ──
         log("INFO", "summary", "Generating pipeline summary...")
-        summary = generate_summary(fact_orders, all_lines, normalized_customers)
+        summary = generate_summary(fact_orders, all_lines, normalized_customers, fact_b2b_invoices, fact_b2b_lines)
         upsert_rows("pipeline_summary", [summary], key_field="summary_id")
         log("SUCCESS", "summary", f"Summary saved — {summary['summary_text'][:80]}...")
 

@@ -6,9 +6,12 @@ Used as a live reference in the transform layer — loaded first every run.
 import os
 import requests
 import time
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
-load_dotenv()
 
 AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")

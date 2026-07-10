@@ -1,8 +1,11 @@
 import requests
 from auth.token_manager import get_valid_token
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
-load_dotenv()
 
 API_VERSION = "2024-01"
 

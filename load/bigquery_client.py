@@ -6,11 +6,14 @@ staging and MERGE upsert logic for idempotency.
 import json
 import os
 from google.cloud import bigquery
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
-load_dotenv()
 
-PROJECT_ID = "data-funnel-3015"
+PROJECT_ID = os.environ.get("GCP_PROJECT", "data-funnel-3015")
 DATASET_ID = "fellers_ranch"
 SCHEMA_DIR = "schema"
 

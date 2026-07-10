@@ -45,8 +45,7 @@ def run_pipeline(resume: bool = False):
     """
     Run the full ETL pipeline with error handling.
 
-    Args:
-        resume: If True, skip already completed steps
+    Args:   ps
     """
     start_time = time.time()
 

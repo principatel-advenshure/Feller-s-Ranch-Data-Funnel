@@ -8,9 +8,12 @@ import json
 import os
 import traceback
 from datetime import datetime
-from dotenv import load_dotenv
-
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # In Cloud Functions, env vars come from Secret Manager
+    
 
 MAX_RETRIES = 3
 RETRY_BACKOFF = [10, 30, 60]  # seconds between retries

@@ -15,9 +15,12 @@ Report structure:
 import os
 import csv
 from datetime import datetime
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
-load_dotenv()
 
 QB_DATA_DIR = os.getenv(
     "QB_DATA_DIR",

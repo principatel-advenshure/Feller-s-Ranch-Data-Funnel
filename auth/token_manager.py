@@ -4,9 +4,12 @@ Loads access tokens and credentials from .env using store prefixes.
 """
 
 import os
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
-load_dotenv()
 
 # Store prefix mapping — add new stores here
 STORE_PREFIXES = {

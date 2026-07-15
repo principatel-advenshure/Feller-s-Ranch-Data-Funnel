@@ -25,9 +25,16 @@ when the CLI is invoked explicitly with `--submit`.
 """
 
 import argparse
+import json
 import time
 
-from extract.shopify_client import API_VERSION, run_query
+from extract.shopify_client import (
+    API_VERSION,
+    CONNECT_TIMEOUT,
+    READ_TIMEOUT,
+    _SESSION,
+    run_query,
+)
 
 
 # Terminal states for a bulk operation. COMPLETED is success; the rest are
@@ -244,6 +251,119 @@ def poll_until_done(operation_id: str, interval: int = 10, timeout: int = 1800) 
             )
 
         time.sleep(interval)
+
+
+# --------------------------------------------------------------------------- #
+# Phase B — download + parse the result JSONL
+# --------------------------------------------------------------------------- #
+
+# Print a progress line every this many parsed records.
+_PROGRESS_EVERY = 500
+
+
+def download_and_parse(url: str) -> tuple[list[dict], list[dict]]:
+    """
+    Stream the bulk-operation result JSONL from a signed URL and parse it into
+    the exact shape transform.normalize_orders.normalize_orders() expects.
+
+    Shopify Bulk Operations return ONE JSONL object per line. Because bulk
+    queries forbid `first:` on connections, each order's line items are NOT
+    inlined — every line item is emitted as its own record carrying a
+    `__parentId` that points back at its order's gid. So:
+
+      * A record WITHOUT `__parentId` is an ORDER (a parent).
+      * A record WITH `__parentId` is a LINE ITEM (a child of that order).
+
+    We reconstruct the nested connection normalize_orders() reads
+    (`order["lineItems"]["edges"][i]["node"]`) by attaching each child to its
+    parent's edges list. Shopify emits a parent before its children, so a single
+    streaming pass suffices; a child whose parent was never seen is skipped
+    gracefully (counted + warned, never a crash).
+
+    Field names are left in Shopify's native camelCase (createdAt,
+    displayFinancialStatus, totalPriceSet, ...) and IDs are left as GID strings
+    (gid://shopify/Order/123) — that is exactly what normalize_orders() consumes,
+    and fact_orders.order_id / fact_order_lines.line_item_id are STRING columns.
+
+    Streams line by line (never buffers the whole file) via the hardened
+    shopify_client session (retries + timeouts already configured).
+
+    Args:
+        url: the signed result URL from a COMPLETED bulk operation.
+
+    Returns:
+        (orders, line_items) where:
+          * orders     — order dicts, each with a rebuilt lineItems.edges list,
+                         ready to hand straight to normalize_orders().
+          * line_items — the flat list of every line-item node (for counts /
+                         summary / sample inspection).
+    """
+    print("⬇️  Streaming bulk result JSONL from signed URL...")
+    response = _SESSION.get(
+        url, stream=True, timeout=(CONNECT_TIMEOUT, READ_TIMEOUT)
+    )
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"❌ Failed to download bulk result: HTTP {response.status_code} "
+            f"{response.text[:500]!r}"
+        )
+
+    orders: list[dict] = []
+    line_items: list[dict] = []
+    orders_by_id: dict[str, dict] = {}
+    orphan_count = 0
+    record_count = 0
+
+    for raw_line in response.iter_lines(decode_unicode=True):
+        if not raw_line:
+            continue  # skip blank/keepalive lines
+        if isinstance(raw_line, bytes):  # defensive: decode_unicode not honored
+            raw_line = raw_line.decode("utf-8")
+
+        record = json.loads(raw_line)
+        record_count += 1
+
+        parent_id = record.get("__parentId")
+        if parent_id is None:
+            # Parent order. Seed an empty lineItems connection for its children
+            # to slot into as they stream past.
+            record["lineItems"] = {"edges": []}
+            orders_by_id[record["id"]] = record
+            orders.append(record)
+        else:
+            # Child line item. Link it to its parent order.
+            parent = orders_by_id.get(parent_id)
+            if parent is None:
+                orphan_count += 1
+                continue
+            parent["lineItems"]["edges"].append({"node": record})
+            line_items.append(record)
+
+        if record_count % _PROGRESS_EVERY == 0:
+            print(
+                f"   ...parsed {record_count} records "
+                f"({len(orders)} orders, {len(line_items)} line items)"
+            )
+
+    print(
+        f"✅ Parsed {record_count} records: "
+        f"{len(orders)} orders, {len(line_items)} line items"
+    )
+    if orphan_count:
+        print(
+            f"⚠️  Skipped {orphan_count} line item(s) with no matching parent "
+            f"order (orphans)"
+        )
+
+    # Dump one of each so a human can verify the field mapping BEFORE any load.
+    if orders:
+        print("\n📋 Sample parsed ORDER dict (as fed to normalize_orders):")
+        print(json.dumps(orders[0], indent=2, default=str))
+    if line_items:
+        print("\n📋 Sample parsed LINE ITEM dict:")
+        print(json.dumps(line_items[0], indent=2, default=str))
+
+    return orders, line_items
 
 
 _GRAPHIQL_TODO = f"""

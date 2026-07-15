@@ -18,7 +18,20 @@ DATASET_ID = "fellers_ranch"
 SCHEMA_DIR = "schema"
 
 
+# Module-level singleton. A BigQuery Client (and its service-account
+# credentials) caches its OAuth access token and only refreshes near expiry, so
+# reusing ONE client keeps token exchanges to a minimum. Building a fresh client
+# per call re-signs a JWT and hits Google's token endpoint every time, which
+# under rapid repeated calls (e.g. a batched backfill upserting many chunks)
+# gets throttled and surfaces as `invalid_grant: Invalid JWT Signature`.
+_CLIENT = None
+
+
 def get_client() -> bigquery.Client:
+    global _CLIENT
+    if _CLIENT is not None:
+        return _CLIENT
+
     credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
     if credentials_path and os.path.exists(credentials_path):
         from google.oauth2 import service_account
@@ -26,8 +39,10 @@ def get_client() -> bigquery.Client:
             credentials_path,
             scopes=["https://www.googleapis.com/auth/bigquery"]
         )
-        return bigquery.Client(project=PROJECT_ID, credentials=credentials)
-    return bigquery.Client(project=PROJECT_ID)
+        _CLIENT = bigquery.Client(project=PROJECT_ID, credentials=credentials)
+    else:
+        _CLIENT = bigquery.Client(project=PROJECT_ID)
+    return _CLIENT
 
 
 def get_table_ref(table_name: str) -> str:

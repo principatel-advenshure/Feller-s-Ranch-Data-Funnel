@@ -1,11 +1,17 @@
 """
 Airtable extractor — pulls MASTER and Shopify <-> Canonical Map tables.
 Used as a live reference in the transform layer — loaded first every run.
+
+Airtable is OPTIONAL. If credentials are missing or set to a placeholder
+(e.g. Fellers, which has no canonical SKU map), the extractor short-circuits
+and returns empty results. Downstream normalize_products() already handles an
+empty mapping by falling back to product names / existing SKUs.
 """
 
 import os
 import requests
 import time
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -13,26 +19,42 @@ except ImportError:
     pass
 
 
-AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
-AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
-BASE_URL = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}"
+def _get_credentials():
+    """Read Airtable creds at call time (not import time)."""
+    api_key = os.getenv("AIRTABLE_API_KEY")
+    base_id = os.getenv("AIRTABLE_BASE_ID")
+    return api_key, base_id
 
-HEADERS = {
-    "Authorization": f"Bearer {AIRTABLE_API_KEY}",
-    "Content-Type": "application/json"
-}
+
+def _airtable_configured() -> bool:
+    """
+    True only if both creds are present and not placeholders.
+    Lets the pipeline run without Airtable (e.g. Shopify-only for Fellers).
+    """
+    api_key, base_id = _get_credentials()
+    if not api_key or not base_id:
+        return False
+    if api_key.strip().lower() in ("placeholder", "") or base_id.strip().lower() in ("placeholder", ""):
+        return False
+    return True
 
 
 def fetch_table(table_name: str) -> list:
     """
     Fetch all records from an Airtable table with pagination.
-
-    Args:
-        table_name: Exact table name as it appears in Airtable
-
-    Returns:
-        List of record dicts with id and fields
+    Returns [] if Airtable is not configured.
     """
+    if not _airtable_configured():
+        print(f"ℹ️  Airtable not configured — skipping table: {table_name}")
+        return []
+
+    api_key, base_id = _get_credentials()
+    base_url = f"https://api.airtable.com/v0/{base_id}"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
     all_records = []
     offset = None
 
@@ -44,9 +66,10 @@ def fetch_table(table_name: str) -> list:
             params["offset"] = offset
 
         response = requests.get(
-            f"{BASE_URL}/{requests.utils.quote(table_name)}",
-            headers=HEADERS,
-            params=params
+            f"{base_url}/{requests.utils.quote(table_name)}",
+            headers=headers,
+            params=params,
+            timeout=(10, 60),
         )
 
         if response.status_code == 429:
@@ -77,7 +100,7 @@ def fetch_table(table_name: str) -> list:
 
 
 def extract_master() -> list:
-    """Fetch the MASTER product list."""
+    """Fetch the MASTER product list. Returns [] if Airtable not configured."""
     return fetch_table("MASTER")
 
 
@@ -85,12 +108,19 @@ def extract_sku_mapping() -> dict:
     """
     Fetch Shopify <-> Canonical Map and return as a lookup dict.
     Format: {shopify_name: canonical_sku}
+
+    Returns an empty dict if Airtable is not configured — downstream
+    normalize_products() handles this by falling back to product names.
     """
+    if not _airtable_configured():
+        print("ℹ️  Airtable not configured — using empty SKU mapping (product names as fallback)")
+        return {}
+
     records = fetch_table("Shopify <-> Canonical Map")
 
     mapping = {}
     for record in records:
-        fields = {k.lstrip("﻿"): v for k, v in record.get("fields", {}).items()}
+        fields = {k.lstrip(""): v for k, v in record.get("fields", {}).items()}
         shopify_name = fields.get("Shopify Name") or fields.get("Shopify Product Name")
         canonical_sku = fields.get("Canonical SKU") or fields.get("SKU")
 
@@ -104,7 +134,6 @@ def extract_sku_mapping() -> dict:
 if __name__ == "__main__":
     print("🔄 Testing Airtable connection...\n")
 
-    # Test MASTER table
     master = extract_master()
     if master:
         sample = master[0].get("fields", {})
@@ -114,7 +143,6 @@ if __name__ == "__main__":
 
     print()
 
-    # Test SKU mapping
     mapping = extract_sku_mapping()
     if mapping:
         sample_key = list(mapping.keys())[0]

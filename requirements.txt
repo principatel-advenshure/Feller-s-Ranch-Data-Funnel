@@ -48,3 +48,6 @@ uvicorn-worker==0.4.0
 watchdog==6.0.0
 Werkzeug==3.1.8
 xlrd==2.0.2
+
+# --- dev / test only (not needed at runtime in Cloud Function) ---
+pytest==8.4.2

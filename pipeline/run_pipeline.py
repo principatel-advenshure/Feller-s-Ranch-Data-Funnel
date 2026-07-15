@@ -30,13 +30,21 @@ from pipeline.summary_generator import generate_summary
 
 
 def safe_clear_staging(table_name: str):
-    """Clear a dirty staging table safely before retrying."""
+    """Clear a dirty staging table safely before retrying.
+
+    A missing staging table just means there is nothing to clear, so treat
+    NotFound as a silent no-op and only warn on genuine errors.
+    """
+    from google.api_core.exceptions import NotFound
     try:
         from load.bigquery_client import get_client, get_table_ref
         client = get_client()
         staging_ref = get_table_ref(f"{table_name}_staging")
         client.query(f"DELETE FROM `{staging_ref}` WHERE TRUE").result()
         log("INFO", "staging", f"Cleared dirty staging table: {table_name}_staging")
+    except NotFound:
+        # No staging table exists yet — nothing to clear.
+        pass
     except Exception as e:
         log("WARNING", "staging", f"Could not clear staging for {table_name}", e)
 

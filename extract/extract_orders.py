@@ -73,9 +73,6 @@ def extract_orders(days_back=30):
                         }}
                         customer {{
                             id
-                            firstName
-                            lastName
-                            email
                         }}
                         lineItems(first: 20) {{
                             edges {{

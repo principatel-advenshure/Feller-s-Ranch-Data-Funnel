@@ -55,12 +55,10 @@ def create_table_if_not_exists(table_name: str):
     table_ref = get_table_ref(table_name)
     schema = load_schema(table_name)
     table = bigquery.Table(table_ref, schema=schema)
-    try:
-        client.get_table(table_ref)
-        print(f"✅ Table already exists: {table_name}")
-    except Exception:
-        client.create_table(table)
-        print(f"✅ Table created: {table_name}")
+    # exists_ok=True makes this idempotent: no 409 if the table already exists,
+    # and no fragile get_table/except guess.
+    client.create_table(table, exists_ok=True)
+    print(f"✅ Table ready: {table_name}")
 
 
 def upsert_rows(table_name: str, rows: list, key_field: str):
@@ -149,7 +147,10 @@ def setup_all_tables():
         "fact_order_lines",
         "dim_products",
         "dim_customers",
-        "dim_stores"
+        "dim_stores",
+        "pipeline_summary",
+        "fact_b2b_invoices",
+        "fact_b2b_invoice_lines",
     ]
 
     print("🔧 Setting up BigQuery tables...")

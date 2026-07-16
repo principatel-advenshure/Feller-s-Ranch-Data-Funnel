@@ -12,7 +12,7 @@ except ImportError:
 
 
 # Shopify Admin API version. Bump deliberately and test in GraphiQL first.
-API_VERSION = "2025-04"
+API_VERSION = "2026-07"
 
 # Network timeouts (seconds): (connect, read)
 CONNECT_TIMEOUT = 10

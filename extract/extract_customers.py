@@ -1,22 +1,33 @@
-import time
+from datetime import datetime, timedelta, timezone
 from extract.shopify_client import run_query
 
-def extract_customers():
+def extract_customers(days_back=30):
     """
-    Fetch all customers from Shopify with pagination
+    Fetch customers from Shopify with pagination.
+
+    days_back:
+        - int  -> only fetch customers UPDATED within the last N days
+        - None -> no date filter (full backfill)
     """
     all_customers = []
     has_next_page = True
     cursor = None
 
-    print(f"👥 Fetching customers...")
+    if days_back is None:
+        filter_clause = ""
+        print(f"👥 Fetching customers (full backfill — no date filter)...")
+    else:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
+        cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
+        filter_clause = f', query: "updated_at:>={cutoff_str}"'
+        print(f"👥 Fetching customers updated since {cutoff_str} (last {days_back} days)...")
 
     while has_next_page:
         after_clause = f', after: "{cursor}"' if cursor else ""
 
         query = f"""
         {{
-            customers(first: 25{after_clause}) {{
+            customers(first: 25{after_clause}{filter_clause}) {{
                 pageInfo {{
                     hasNextPage
                     endCursor
@@ -57,8 +68,6 @@ def extract_customers():
 
         print(f"   Fetched {len(all_customers)} customers so far...")
 
-        # Small delay to avoid rate limiting
-        time.sleep(0.5)
 
     print(f"✅ Total customers fetched: {len(all_customers)}")
     return all_customers

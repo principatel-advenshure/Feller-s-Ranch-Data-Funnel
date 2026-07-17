@@ -166,6 +166,7 @@ def setup_all_tables():
         "pipeline_summary",
         "fact_b2b_invoices",
         "fact_b2b_invoice_lines",
+        "pipeline_control",
     ]
 
     print("🔧 Setting up BigQuery tables...")
@@ -173,6 +174,64 @@ def setup_all_tables():
         create_table_if_not_exists(table)
     print("✅ All tables ready!")
 
+
+
+
+def read_watermark(key: str = "nightly_watermark"):
+    """
+    Read the last successful watermark from pipeline_control.
+    Returns an ISO-format UTC timestamp string, or None if no watermark exists yet.
+    """
+    import google.cloud.bigquery as bq_module
+    client = get_client()
+    table_ref = get_table_ref("pipeline_control")
+    query = f"""
+        SELECT last_successful_watermark
+        FROM `{table_ref}`
+        WHERE control_key = @key
+        LIMIT 1
+    """
+    job_config = bq_module.QueryJobConfig(query_parameters=[
+        bq_module.ScalarQueryParameter("key", "STRING", key)
+    ])
+    results = list(client.query(query, job_config=job_config).result())
+    if not results or results[0].last_successful_watermark is None:
+        return None
+    ts = results[0].last_successful_watermark
+    return ts.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def write_watermark(watermark_ts: str, order_count: int, key: str = "nightly_watermark"):
+    """
+    Upsert the watermark row in pipeline_control after a successful run.
+    watermark_ts: ISO-format UTC string (e.g. "2026-07-16T11:14:10Z")
+    """
+    import google.cloud.bigquery as bq_module
+    from datetime import datetime, timezone
+    client = get_client()
+    table_ref = get_table_ref("pipeline_control")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    merge_query = f"""
+    MERGE `{table_ref}` T
+    USING (SELECT @key AS control_key) S
+    ON T.control_key = S.control_key
+    WHEN MATCHED THEN
+        UPDATE SET
+            last_successful_watermark = TIMESTAMP(@watermark_ts),
+            last_run_at = TIMESTAMP(@now),
+            last_run_order_count = @order_count
+    WHEN NOT MATCHED THEN
+        INSERT (control_key, last_successful_watermark, last_run_at, last_run_order_count)
+        VALUES (@key, TIMESTAMP(@watermark_ts), TIMESTAMP(@now), @order_count)
+    """
+    job_config = bq_module.QueryJobConfig(query_parameters=[
+        bq_module.ScalarQueryParameter("key", "STRING", key),
+        bq_module.ScalarQueryParameter("watermark_ts", "STRING", watermark_ts),
+        bq_module.ScalarQueryParameter("now", "STRING", now),
+        bq_module.ScalarQueryParameter("order_count", "INT64", order_count),
+    ])
+    client.query(merge_query, job_config=job_config).result()
+    print(f"✅ Watermark saved: {watermark_ts} ({order_count} orders)")
 
 if __name__ == "__main__":
     setup_all_tables()

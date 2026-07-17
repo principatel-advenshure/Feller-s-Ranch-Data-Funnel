@@ -22,7 +22,7 @@ from transform.normalize_customers import normalize_customers
 from transform.variable_weight import resolve_variable_weight_orders
 from transform.normalize_quickbooks import normalize_quickbooks
 from transform.qa_checks import run_qa_checks
-from load.bigquery_client import setup_all_tables, upsert_rows
+from load.bigquery_client import setup_all_tables, upsert_rows, read_watermark, write_watermark
 from load.load_facts import load_fact_orders, load_fact_order_lines
 from load.load_dims import load_dim_products, load_dim_customers, load_dim_stores
 from load.load_b2b import load_fact_b2b_invoices, load_fact_b2b_invoice_lines
@@ -78,15 +78,27 @@ def run_pipeline(resume: bool = False):
             log("INFO", "setup", "Skipping — already completed")
 
         # ── Step 2: Extract ──
+        # Read durable watermark — 1h overlap buffer; falls back to days_back=30 on first run.
+        from datetime import datetime, timedelta, timezone
+        raw_watermark = read_watermark()
+        if raw_watermark:
+            wm_dt = datetime.fromisoformat(raw_watermark.replace("Z", "+00:00"))
+            since_str = (wm_dt - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            log("INFO", "extract", f"Watermark: {raw_watermark} — querying since {since_str} (1h overlap)")
+            extract_window = {"since": since_str}
+        else:
+            log("INFO", "extract", "No watermark — falling back to days_back=30")
+            extract_window = {"days_back": 30}
+
         raw_orders = raw_products = raw_customers = raw_inventory = None
 
         if not is_step_completed("extract_orders"):
             log("INFO", "extract", "Extracting orders...")
-            raw_orders = with_retry(extract_orders, "extract_orders")
+            raw_orders = with_retry(lambda: extract_orders(**extract_window), "extract_orders")
             save_state("extract_orders", "completed")
         else:
             log("INFO", "extract_orders", "Skipping — already completed")
-            raw_orders = extract_orders()
+            raw_orders = extract_orders(**extract_window)
 
         if not is_step_completed("extract_products"):
             log("INFO", "extract", "Extracting products...")
@@ -98,11 +110,11 @@ def run_pipeline(resume: bool = False):
 
         if not is_step_completed("extract_customers"):
             log("INFO", "extract", "Extracting customers...")
-            raw_customers = with_retry(extract_customers, "extract_customers")
+            raw_customers = with_retry(lambda: extract_customers(**extract_window), "extract_customers")
             save_state("extract_customers", "completed")
         else:
             log("INFO", "extract_customers", "Skipping — already completed")
-            raw_customers = extract_customers()
+            raw_customers = extract_customers(**extract_window)
 
         if not is_step_completed("extract_inventory"):
             log("INFO", "extract", "Extracting inventory...")
@@ -215,6 +227,11 @@ def run_pipeline(resume: bool = False):
         summary = generate_summary(fact_orders, all_lines, normalized_customers, fact_b2b_invoices, fact_b2b_lines)
         upsert_rows("pipeline_summary", [summary], key_field="summary_id")
         log("SUCCESS", "summary", f"Summary saved — {summary['summary_text'][:80]}...")
+
+        # ── Write durable watermark ──
+        now_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        write_watermark(now_ts, len(fact_orders))
+        log("SUCCESS", "watermark", f"Watermark updated to {now_ts}")
 
         # ── Done ──
         elapsed = round(time.time() - start_time, 2)

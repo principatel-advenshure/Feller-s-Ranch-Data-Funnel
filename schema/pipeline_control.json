@@ -1,0 +1,26 @@
+[
+  {
+    "name": "control_key",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Unique key for this control record (e.g. 'nightly_watermark')"
+  },
+  {
+    "name": "last_successful_watermark",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "updated_at cutoff from the last successful pipeline run. NULL on first run."
+  },
+  {
+    "name": "last_run_at",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "Wall-clock time of the last successful pipeline completion."
+  },
+  {
+    "name": "last_run_order_count",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "Number of orders extracted on the last successful run."
+  }
+]

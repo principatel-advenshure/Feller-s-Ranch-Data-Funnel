@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from extract.shopify_client import run_query
 
 
-def extract_orders(days_back=30):
+def extract_orders(days_back=30, since=None):
     """
     Fetch orders from Shopify with cursor-based pagination.
 
@@ -21,7 +21,10 @@ def extract_orders(days_back=30):
     cursor = None
 
     # Build the optional Shopify search filter from days_back
-    if days_back is None:
+    if since is not None:
+        filter_clause = f', query: "updated_at:>={since}"'
+        print(f"📦 Fetching orders updated since {since} (watermark mode)...")
+    elif days_back is None:
         filter_clause = ""
         print("📦 Fetching orders (full backfill — no date filter)...")
     else:

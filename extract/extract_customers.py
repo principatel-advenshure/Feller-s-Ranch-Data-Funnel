@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from extract.shopify_client import run_query
 
-def extract_customers(days_back=30):
+def extract_customers(days_back=30, since=None):
     """
     Fetch customers from Shopify with pagination.
 
@@ -13,7 +13,10 @@ def extract_customers(days_back=30):
     has_next_page = True
     cursor = None
 
-    if days_back is None:
+    if since is not None:
+        filter_clause = f', query: "updated_at:>={since}"'
+        print(f"👥 Fetching customers updated since {since} (watermark mode)...")
+    elif days_back is None:
         filter_clause = ""
         print(f"👥 Fetching customers (full backfill — no date filter)...")
     else:
